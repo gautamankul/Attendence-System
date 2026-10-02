@@ -1,4 +1,5 @@
 import calendar
+import math  # noqa: F401  (kept for future rounding changes)
 from datetime import date
 
 from django.contrib.auth import get_user_model, login
@@ -18,6 +19,84 @@ User = get_user_model()
 STATUS_LABELS = dict(AttendanceRecord.Status.choices)
 VALID_STATUSES = set(STATUS_LABELS.keys())
 BOLD = Font(bold=True)
+RED_BOLD = Font(bold=True, color="9B2C2C")
+
+# ---------------------------------------------------------------------------
+# Office-attendance policy
+# Each month an employee must work from office on at least OFFICE_PERCENT % of
+# their eligible working days. Eligible days = Mon-Fri days in the month minus
+# privilege-leave days minus holidays (these days are excluded from the base).
+#
+# Statuses are matched by their label/key, so adjust the words below to match
+# the values in AttendanceRecord.Status.
+# ---------------------------------------------------------------------------
+OFFICE_PERCENT = 60
+OFFICE_WORDS = ("office",)
+OFFICE_KEYS = {"wfo"}
+PRIVILEGE_WORDS = ("privilege",)
+PRIVILEGE_KEYS = {"pl"}
+HOLIDAY_WORDS = ("holiday",)
+HOLIDAY_KEYS = set()
+
+
+def _classify(status):
+    """Return 'office', 'pl', 'holiday' or 'other' for a stored status value."""
+    key = str(status).lower()
+    label = str(STATUS_LABELS.get(status, status)).lower()
+    if key in PRIVILEGE_KEYS or any(w in label or w in key for w in PRIVILEGE_WORDS):
+        return "pl"
+    if key in HOLIDAY_KEYS or any(w in label or w in key for w in HOLIDAY_WORDS):
+        return "holiday"
+    if key in OFFICE_KEYS or any(w in label or w in key for w in OFFICE_WORDS):
+        return "office"
+    return "other"
+
+
+def compute_policy(year, month, entries):
+    """
+    entries: iterable of (date, status) for ONE user in the given month.
+    Only Monday-Friday entries are counted.
+    """
+    days_in_month = calendar.monthrange(year, month)[1]
+    working_days = sum(
+        1 for d in range(1, days_in_month + 1) if date(year, month, d).weekday() < 5
+    )
+
+    office = pl = holiday = other = 0
+    for d, status in entries:
+        if d.weekday() >= 5:
+            continue
+        kind = _classify(status)
+        if kind == "office":
+            office += 1
+        elif kind == "pl":
+            pl += 1
+        elif kind == "holiday":
+            holiday += 1
+        else:
+            other += 1
+
+    eligible = max(working_days - pl - holiday, 0)
+    required = -(-eligible * OFFICE_PERCENT // 100)  # ceil without floats
+    remaining = max(required - office, 0)
+    unrecorded = max(eligible - office - other, 0)
+    return {
+        "year": year,
+        "month": month,
+        "month_label": calendar.month_name[month],
+        "percent_required": OFFICE_PERCENT,
+        "working_days": working_days,
+        "privilege_leave": pl,
+        "holidays": holiday,
+        "eligible_days": eligible,
+        "required_days": required,
+        "office_days": office,
+        "remaining": remaining,
+        "unrecorded": unrecorded,
+        "achievable": remaining <= unrecorded,
+        "met": office >= required,
+        "achieved_percent": round(office * 100 / eligible, 1) if eligible else 0,
+    }
 
 
 def register(request):
@@ -117,6 +196,29 @@ def _resolve_target(request):
 
 
 @login_required
+def policy_summary(request):
+    """JSON office-policy status for one user and month. Staff may pass user_id."""
+    today = date.today()
+    try:
+        year = int(request.GET.get("year", today.year))
+        month = int(request.GET.get("month", today.month))
+        if not (1900 <= year <= 2100 and 1 <= month <= 12):
+            raise ValueError
+    except ValueError:
+        return HttpResponseBadRequest("Invalid year or month.")
+
+    raw_user = request.GET.get("user_id", "")
+    if raw_user == "all" or (raw_user and not raw_user.isdigit()):
+        return HttpResponseBadRequest("Invalid user.")
+    target = _resolve_target(request)  # 403 for non-staff asking for others
+
+    entries = AttendanceRecord.objects.filter(
+        user=target, date__year=year, date__month=month
+    ).values_list("date", "status")
+    return JsonResponse(compute_policy(year, month, entries))
+
+
+@login_required
 def download_report(request):
     """Export attendance as .xlsx (month or full year). Staff may pick any user or all users."""
     scope = request.GET.get("scope")
@@ -198,6 +300,38 @@ def download_report(request):
             summary.append([label, count])
         summary.column_dimensions["A"].width = 20
         summary.column_dimensions["B"].width = 8
+
+    # --- Policy sheet: monthly office-attendance compliance ---
+    if target is not None:
+        policy_users = [target]
+    else:
+        policy_users = list(User.objects.filter(is_staff=False).order_by("username"))
+    policy_months = [month] if scope == "month" else list(range(1, 13))
+
+    grouped = {}
+    for uid, d, st in qs.values_list("user_id", "date", "status"):
+        grouped.setdefault((uid, d.month), []).append((d, st))
+
+    pws = wb.create_sheet("Policy")
+    pws.append([
+        "Employee", "Month", "Working days", "Privilege leave", "Holidays",
+        "Eligible days", f"Required office days ({OFFICE_PERCENT}%)",
+        "Office days", "Shortfall", "Achieved %", "Result",
+    ])
+    for cell in pws[1]:
+        cell.font = BOLD
+    for u in policy_users:
+        for m in policy_months:
+            p = compute_policy(year, m, grouped.get((u.pk, m), []))
+            pws.append([
+                u.username, p["month_label"], p["working_days"], p["privilege_leave"],
+                p["holidays"], p["eligible_days"], p["required_days"], p["office_days"],
+                p["remaining"], p["achieved_percent"], "Met" if p["met"] else "Not met",
+            ])
+            if not p["met"]:
+                pws.cell(row=pws.max_row, column=11).font = RED_BOLD
+    for i, width in enumerate([18, 12, 14, 16, 10, 14, 30, 12, 10, 12, 10], start=1):
+        pws.column_dimensions[get_column_letter(i)].width = width
 
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

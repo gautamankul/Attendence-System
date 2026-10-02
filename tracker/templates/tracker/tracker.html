@@ -141,6 +141,25 @@
   .ent-empty { text-align: center; padding: 56px 20px; color: var(--ent-muted); }
   .ent-empty strong { display: block; color: var(--ent-ink); font-size: 15px; margin-bottom: 4px; }
 
+  /* Office policy (60%) */
+  .pol-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+  .pol-num { font-size: 28px; font-weight: 600; line-height: 1.1; }
+  .pol-of { color: var(--ent-muted); margin-left: 6px; }
+  .pol-chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 12px; }
+  .pol-chip.ok { background: #e6f4ea; color: #1e6b3a; }
+  .pol-chip.warn { background: #fdf1d8; color: #7a5000; }
+  .pol-chip.bad { background: #fbe7e7; color: #9b2c2c; }
+  .pol-track { height: 8px; background: #e9edf2; border-radius: 4px; margin: 12px 0 16px; overflow: hidden; }
+  .pol-fill { height: 100%; background: var(--ent-accent); border-radius: 4px; }
+  .pol-fill.ok { background: #2e9e5b; }
+  .pol-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .pol-stat-value { font-size: 18px; font-weight: 600; }
+  .pol-stat-label { font-size: 12px; color: var(--ent-muted); }
+  .pol-msg { margin: 0 0 6px; }
+  .pol-box { border: 1px solid var(--ent-line); border-radius: var(--ent-radius); padding: 16px; margin-bottom: 16px; background: #fbfcfd; }
+  .pol-stepper { display: flex; align-items: center; gap: 8px; }
+  .pol-month { min-width: 130px; text-align: center; font-weight: 600; }
+
   @media (max-width: 960px) {
     .ent-layout { grid-template-columns: minmax(0, 1fr); }
     .ent-main { padding: 16px; }
@@ -198,6 +217,7 @@
                 <span class="ro-month" id="ro-month" aria-live="polite"></span>
                 <button type="button" class="ent-btn" id="ro-today" style="margin-left:auto;">Today</button>
               </div>
+              <div id="pol-staff" class="pol-box" aria-busy="true"></div>
               <div id="ro-kpis" class="ro-kpis"></div>
               <div id="ro-calendar" role="grid" aria-label="Attendance for {{ selected_user.username }}"></div>
               <div id="ro-legend" class="ro-legend"></div>
@@ -250,6 +270,17 @@
       <h1 class="ent-title">My attendance</h1>
       <p class="ent-subtitle">Record your daily status. Your entries are private to your account.</p>
       <div class="ent-layout single">
+        <section class="ent-card" aria-labelledby="pol-heading">
+          <div class="ent-card-head">
+            <h2 id="pol-heading">Monthly office policy</h2>
+            <div class="pol-stepper">
+              <button type="button" class="ent-btn ro-nav" id="pol-prev" aria-label="Previous month">&lsaquo;</button>
+              <span class="pol-month" id="pol-month" aria-live="polite"></span>
+              <button type="button" class="ent-btn ro-nav" id="pol-next" aria-label="Next month">&rsaquo;</button>
+            </div>
+          </div>
+          <div class="ent-card-body" id="pol-body" aria-busy="true"></div>
+        </section>
         <section class="ent-card">
           <div class="ent-card-body">
             <div id="app-root"></div>
@@ -259,6 +290,121 @@
     {% endif %}
   </main>
 </div>
+
+<script>
+(function () {
+  var URL = "{% url 'policy_summary' %}";
+  var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var tokens = new WeakMap();
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+
+  function draw(box, d) {
+    box.innerHTML = '';
+    var state = d.met ? 'ok' : (d.achievable ? 'warn' : 'bad');
+    var chipText = d.met ? 'Target met' : (d.achievable ? 'In progress' : 'At risk');
+
+    var top = el('div', 'pol-top');
+    var big = el('div');
+    big.appendChild(el('span', 'pol-num', d.office_days));
+    big.appendChild(el('span', 'pol-of', 'of ' + d.required_days + ' required office days'));
+    top.appendChild(big);
+    top.appendChild(el('span', 'pol-chip ' + state, chipText));
+    box.appendChild(top);
+
+    var track = el('div', 'pol-track');
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', String(d.required_days));
+    track.setAttribute('aria-valuenow', String(d.office_days));
+    var fill = el('div', 'pol-fill' + (d.met ? ' ok' : ''));
+    var pct = d.required_days ? Math.min(100, d.office_days * 100 / d.required_days) : 100;
+    fill.style.width = pct + '%';
+    track.appendChild(fill);
+    box.appendChild(track);
+
+    var stats = el('div', 'pol-stats');
+    [
+      ['Working days', d.working_days],
+      ['Privilege leave', d.privilege_leave],
+      ['Holidays', d.holidays],
+      ['Eligible days', d.eligible_days],
+      ['Required (' + d.percent_required + '%)', d.required_days],
+      ['Still needed', d.remaining]
+    ].forEach(function (s) {
+      var c = el('div');
+      c.appendChild(el('div', 'pol-stat-value', s[1]));
+      c.appendChild(el('div', 'pol-stat-label', s[0]));
+      stats.appendChild(c);
+    });
+    box.appendChild(stats);
+
+    var msg;
+    if (d.met) {
+      msg = 'Target met for ' + d.month_label + ' (' + d.achieved_percent + '% of eligible days in office).';
+    } else if (d.achievable) {
+      msg = 'Work from office ' + plural(d.remaining, 'more day') + ' to meet the ' + d.percent_required +
+            '% target. ' + plural(d.unrecorded, 'eligible day') + ' still unmarked.';
+    } else {
+      msg = 'The target can no longer be met: ' + plural(d.remaining, 'more office day') +
+            ' needed, but only ' + plural(d.unrecorded, 'eligible day') + ' are unmarked.';
+    }
+    box.appendChild(el('p', 'pol-msg', msg));
+    box.appendChild(el('p', 'ent-help', 'Required days = ' + d.percent_required +
+      '% of weekdays after removing privilege leave and holidays, rounded up. Only Monday to Friday count.'));
+    box.setAttribute('aria-busy', 'false');
+  }
+
+  // month is 0-indexed (JS style); userId is "" for the signed-in user
+  window.renderPolicy = function (box, year, month, userId) {
+    if (!box) return;
+    var token = {};
+    tokens.set(box, token);
+    box.setAttribute('aria-busy', 'true');
+    var q = 'year=' + year + '&month=' + (month + 1) + (userId ? '&user_id=' + encodeURIComponent(userId) : '');
+    fetch(URL + '?' + q, { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); })
+      .then(function (d) { if (tokens.get(box) === token) draw(box, d); })
+      .catch(function () {
+        if (tokens.get(box) !== token) return;
+        box.innerHTML = '';
+        box.appendChild(el('p', 'pol-msg', 'Policy status could not be loaded. Refresh the page and try again.'));
+        box.setAttribute('aria-busy', 'false');
+      });
+  };
+
+  {% if not user.is_staff %}
+  var ps = { y: {{ current_year }}, m: {{ current_month }} - 1 };
+  var body = document.getElementById('pol-body');
+  var label = document.getElementById('pol-month');
+  function load() {
+    label.textContent = MONTHS[ps.m] + ' ' + ps.y;
+    window.renderPolicy(body, ps.y, ps.m, '');
+  }
+  document.getElementById('pol-prev').onclick = function () { ps.m--; if (ps.m < 0) { ps.m = 11; ps.y--; } load(); };
+  document.getElementById('pol-next').onclick = function () { ps.m++; if (ps.m > 11) { ps.m = 0; ps.y++; } load(); };
+
+  // Refresh the policy card whenever the calendar saves a status change.
+  var setUrl = "{% url 'set_status' %}";
+  var origFetch = window.fetch;
+  window.fetch = function (input) {
+    var p = origFetch.apply(this, arguments);
+    try {
+      var u = typeof input === 'string' ? input : (input && input.url) || '';
+      if (u.indexOf(setUrl) !== -1) { p.then(function (r) { if (r.ok) load(); }); }
+    } catch (e) {}
+    return p;
+  };
+  load();
+  {% endif %}
+})();
+</script>
 
 {% if user.is_staff %}
   {% if selected_user %}
@@ -287,6 +433,7 @@
 
     function render() {
       monthEl.textContent = months[month] + ' ' + year;
+      window.renderPolicy(document.getElementById('pol-staff'), year, month, "{{ selected_user.pk }}");
       calEl.innerHTML = ''; kpiEl.innerHTML = ''; legendEl.innerHTML = '';
 
       var grid = el('div', 'ro-grid');

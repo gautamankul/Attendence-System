@@ -17,4 +17,5 @@ urlpatterns = [
     path("tracker/", tracker_views.tracker_view, name="tracker"),
     path("tracker/set-status/", tracker_views.set_status, name="set_status"),
     path("tracker/download/", tracker_views.download_report, name="download_report"),
+    path("tracker/policy-summary/", tracker_views.policy_summary, name="policy_summary"),
 ]
