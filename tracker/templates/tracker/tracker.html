@@ -313,7 +313,7 @@
     var top = el('div', 'pol-top');
     var big = el('div');
     big.appendChild(el('span', 'pol-num', d.office_days));
-    big.appendChild(el('span', 'pol-of', 'of ' + d.required_days + ' required office days'));
+    big.appendChild(el('span', 'pol-of', 'of ' + d.required_days + ' required office days (' + d.completed_percent + '% completed)'));
     top.appendChild(big);
     top.appendChild(el('span', 'pol-chip ' + state, chipText));
     box.appendChild(top);

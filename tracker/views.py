@@ -96,6 +96,10 @@ def compute_policy(year, month, entries):
         "achievable": remaining <= unrecorded,
         "met": office >= required,
         "achieved_percent": round(office * 100 / eligible, 1) if eligible else 0,
+        # progress toward the required office days (capped at 100)
+        "completed_percent": (
+            min(100.0, round(office * 100 / required, 1)) if required else 100.0
+        ),
     }
 
 
@@ -316,7 +320,8 @@ def download_report(request):
     pws.append([
         "Employee", "Month", "Working days", "Privilege leave", "Holidays",
         "Eligible days", f"Required office days ({OFFICE_PERCENT}%)",
-        "Office days", "Shortfall", "Achieved %", "Result",
+        "Office days", "Shortfall", "Office % of eligible days",
+        f"Target completed % (of {OFFICE_PERCENT}% policy)", "Result",
     ])
     for cell in pws[1]:
         cell.font = BOLD
@@ -326,11 +331,14 @@ def download_report(request):
             pws.append([
                 u.username, p["month_label"], p["working_days"], p["privilege_leave"],
                 p["holidays"], p["eligible_days"], p["required_days"], p["office_days"],
-                p["remaining"], p["achieved_percent"], "Met" if p["met"] else "Not met",
+                p["remaining"], p["achieved_percent"], p["completed_percent"],
+                "Met" if p["met"] else "Not met",
             ])
+            pws.cell(row=pws.max_row, column=10).number_format = '0.0"%"'
+            pws.cell(row=pws.max_row, column=11).number_format = '0.0"%"'
             if not p["met"]:
-                pws.cell(row=pws.max_row, column=11).font = RED_BOLD
-    for i, width in enumerate([18, 12, 14, 16, 10, 14, 30, 12, 10, 12, 10], start=1):
+                pws.cell(row=pws.max_row, column=12).font = RED_BOLD
+    for i, width in enumerate([18, 12, 14, 16, 10, 14, 30, 12, 10, 24, 36, 10], start=1):
         pws.column_dimensions[get_column_letter(i)].width = width
 
     response = HttpResponse(
