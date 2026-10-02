@@ -124,14 +124,14 @@
   }
   .ro-badge::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
-  .st-0 { --st-bg: #e6f4ea; --st-fg: #1e6b3a; --st-bar: #2e9e5b; }
-  .st-1 { --st-bg: #e4eefb; --st-fg: #1b4f9c; --st-bar: #3b82d6; }
-  .st-2 { --st-bg: #fdf1d8; --st-fg: #7a5000; --st-bar: #e0a020; }
-  .st-3 { --st-bg: #fbe7e7; --st-fg: #9b2c2c; --st-bar: #d65a5a; }
-  .st-4 { --st-bg: #eee8fb; --st-fg: #5b3fa0; --st-bar: #8a6fd6; }
-  .st-5 { --st-bg: #dff5f2; --st-fg: #0f6a60; --st-bar: #2fa597; }
-  .st-6 { --st-bg: #eceff3; --st-fg: #46505e; --st-bar: #8a94a3; }
-  .ro-badge { background: var(--st-bg); color: var(--st-fg); }
+  /* Status colors, matched to the employee calendar */
+  .st-WFH     { --st-tint: color-mix(in srgb, #2563EB 14%, #fff); --st-bar: #2563EB; }
+  .st-WFO     { --st-tint: color-mix(in srgb, #16A34A 14%, #fff); --st-bar: #16A34A; }
+  .st-Leave   { --st-tint: color-mix(in srgb, #D97706 14%, #fff); --st-bar: #D97706; }
+  .st-Holiday { --st-tint: color-mix(in srgb, #7C3AED 14%, #fff); --st-bar: #7C3AED; }
+  .st-other   { --st-tint: #eceff3; --st-bar: #64707D; }
+  .ro-cell.has-status { background: var(--st-tint); }
+  .ro-badge { background: var(--st-bar); color: #fff; }
   .ro-kpi { border-left-color: var(--st-bar, var(--ent-line-strong)); }
 
   .ro-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; font-size: 12px; color: var(--ent-muted); }
@@ -422,7 +422,7 @@
     var legendEl = document.getElementById('ro-legend');
     var monthEl = document.getElementById('ro-month');
 
-    function stClass(k) { var i = keys.indexOf(k); return 'st-' + (i < 0 ? 6 : i % 7); }
+    function stClass(k) { return 'st-' + (['WFH','WFO','Leave','Holiday'].indexOf(k) >= 0 ? k : 'other'); }
     function pad(n) { return n < 10 ? '0' + n : '' + n; }
     function el(tag, cls, text) {
       var e = document.createElement(tag);
@@ -459,6 +459,7 @@
           var badge = el('span', 'ro-badge ' + stClass(status), text);
           badge.title = text;
           cell.appendChild(badge);
+          cell.className += ' has-status ' + stClass(status);
           cell.setAttribute('aria-label', months[month] + ' ' + d + ': ' + text);
           counts[status] = (counts[status] || 0) + 1;
           recorded++;

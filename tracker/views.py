@@ -33,8 +33,8 @@ RED_BOLD = Font(bold=True, color="9B2C2C")
 OFFICE_PERCENT = 60
 OFFICE_WORDS = ("office",)
 OFFICE_KEYS = {"wfo"}
-PRIVILEGE_WORDS = ("privilege",)
-PRIVILEGE_KEYS = {"pl"}
+PRIVILEGE_WORDS = ("privilege", "leave")
+PRIVILEGE_KEYS = {"pl", "leave"}
 HOLIDAY_WORDS = ("holiday",)
 HOLIDAY_KEYS = set()
 
