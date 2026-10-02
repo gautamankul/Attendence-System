@@ -1,0 +1,7 @@
+Django
+et_xmlfile
+gunicorn
+openpyxl
+whitenoise
+python-dotenv
+mysqlclient

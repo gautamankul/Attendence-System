@@ -1,0 +1,364 @@
+{% extends "tracker/base.html" %}
+{% load static %}
+
+{% block title %}Hybrid Attendance{% endblock %}
+
+{% block body %}
+{{ records|json_script:"records-data" }}
+{% if user.is_staff %}
+  {{ status_labels|json_script:"labels-data" }}
+{% endif %}
+
+<style>
+  :root {
+    --ent-bg: #f3f5f8;
+    --ent-surface: #ffffff;
+    --ent-ink: #1b2430;
+    --ent-muted: #5b6776;
+    --ent-line: #dde2e8;
+    --ent-line-strong: #c5ccd6;
+    --ent-nav: #14213d;
+    --ent-accent: #1f5fbf;
+    --ent-accent-dark: #174a96;
+    --ent-weekend: #f8f9fb;
+    --ent-radius: 6px;
+  }
+
+  body { background: var(--ent-bg); }
+
+  .ent, .ent * { box-sizing: border-box; }
+  .ent {
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ent-ink);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* App bar */
+  .ent-bar { background: var(--ent-nav); color: #fff; }
+  .ent-bar-inner {
+    max-width: 1280px; margin: 0 auto; padding: 0 24px; height: 56px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .ent-brand { font-size: 16px; font-weight: 600; letter-spacing: .01em; }
+  .ent-user { display: flex; align-items: center; gap: 12px; }
+  .ent-avatar {
+    width: 30px; height: 30px; border-radius: 50%; background: #2c3e66; color: #fff;
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px;
+  }
+  .ent-user-name { font-weight: 500; }
+  .ent-role {
+    font-size: 12px; padding: 2px 8px; border-radius: 10px;
+    background: rgba(255,255,255,.14); color: #e8edf7;
+  }
+  .ent-logout {
+    background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.35);
+    padding: 6px 12px; border-radius: var(--ent-radius); font: inherit; cursor: pointer;
+  }
+  .ent-logout:hover { background: rgba(255,255,255,.1); }
+
+  /* Page */
+  .ent-main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  .ent-title { margin: 0; font-size: 22px; font-weight: 600; }
+  .ent-subtitle { margin: 4px 0 20px; color: var(--ent-muted); max-width: 70ch; }
+
+  .ent-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+  .ent-layout.single { grid-template-columns: minmax(0, 1fr); }
+
+  .ent-card { background: var(--ent-surface); border: 1px solid var(--ent-line); border-radius: var(--ent-radius); }
+  .ent-card + .ent-card { margin-top: 20px; }
+  .ent-card-head {
+    padding: 14px 20px; border-bottom: 1px solid var(--ent-line);
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .ent-card-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .ent-card-body { padding: 20px; }
+
+  /* Form controls */
+  .ent-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .ent-field label { font-size: 13px; font-weight: 500; }
+  .ent select, .ent input[type="number"] {
+    height: 36px; padding: 0 10px; border: 1px solid var(--ent-line-strong); border-radius: var(--ent-radius);
+    background: #fff; color: var(--ent-ink); font: inherit; width: 100%;
+  }
+  .ent-inline-select { width: auto; min-width: 220px; }
+  .ent select:focus-visible, .ent input:focus-visible, .ent button:focus-visible {
+    outline: 2px solid var(--ent-accent); outline-offset: 2px;
+  }
+  .ent-btn {
+    height: 36px; padding: 0 14px; border-radius: var(--ent-radius); font: inherit; font-weight: 500; cursor: pointer;
+    border: 1px solid var(--ent-line-strong); background: #fff; color: var(--ent-ink);
+  }
+  .ent-btn:hover { background: #f1f4f8; }
+  .ent-btn.primary { background: var(--ent-accent); border-color: var(--ent-accent); color: #fff; }
+  .ent-btn.primary:hover { background: var(--ent-accent-dark); }
+  .ent-btn.block { width: 100%; }
+  .ent-btn-stack { display: grid; gap: 8px; margin-top: 6px; }
+  .ent-help { margin: 12px 0 0; font-size: 12px; color: var(--ent-muted); }
+
+  /* Read-only calendar */
+  .ro-toolbar { display: flex; align-items: center; gap: 8px; }
+  .ro-month { font-size: 16px; font-weight: 600; min-width: 150px; }
+  .ro-nav { width: 36px; padding: 0; font-size: 18px; line-height: 1; }
+  .ro-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .ro-kpi { border: 1px solid var(--ent-line); border-left-width: 4px; border-radius: var(--ent-radius); padding: 10px 12px; }
+  .ro-kpi-value { font-size: 22px; font-weight: 600; line-height: 1.2; }
+  .ro-kpi-label { font-size: 12px; color: var(--ent-muted); }
+
+  .ro-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--ent-line); border-left: 1px solid var(--ent-line); }
+  .ro-dow {
+    padding: 8px; font-size: 12px; font-weight: 600; color: var(--ent-muted); background: #f8f9fb;
+    border-right: 1px solid var(--ent-line); border-bottom: 1px solid var(--ent-line);
+  }
+  .ro-cell {
+    min-height: 88px; padding: 6px 8px; border-right: 1px solid var(--ent-line); border-bottom: 1px solid var(--ent-line);
+    background: #fff; cursor: default; user-select: none; overflow: hidden;
+  }
+  .ro-cell.weekend { background: var(--ent-weekend); }
+  .ro-cell.empty { background: #fbfcfd; }
+  .ro-num { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; font-weight: 500; border-radius: 12px; }
+  .ro-cell.today .ro-num { background: var(--ent-accent); color: #fff; }
+  .ro-badge {
+    display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 2px 6px; border-radius: 4px;
+    font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ro-badge::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  .st-0 { --st-bg: #e6f4ea; --st-fg: #1e6b3a; --st-bar: #2e9e5b; }
+  .st-1 { --st-bg: #e4eefb; --st-fg: #1b4f9c; --st-bar: #3b82d6; }
+  .st-2 { --st-bg: #fdf1d8; --st-fg: #7a5000; --st-bar: #e0a020; }
+  .st-3 { --st-bg: #fbe7e7; --st-fg: #9b2c2c; --st-bar: #d65a5a; }
+  .st-4 { --st-bg: #eee8fb; --st-fg: #5b3fa0; --st-bar: #8a6fd6; }
+  .st-5 { --st-bg: #dff5f2; --st-fg: #0f6a60; --st-bar: #2fa597; }
+  .st-6 { --st-bg: #eceff3; --st-fg: #46505e; --st-bar: #8a94a3; }
+  .ro-badge { background: var(--st-bg); color: var(--st-fg); }
+  .ro-kpi { border-left-color: var(--st-bar, var(--ent-line-strong)); }
+
+  .ro-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; font-size: 12px; color: var(--ent-muted); }
+  .ro-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .ro-legend i { width: 10px; height: 10px; border-radius: 2px; background: var(--st-bar); }
+
+  .ent-empty { text-align: center; padding: 56px 20px; color: var(--ent-muted); }
+  .ent-empty strong { display: block; color: var(--ent-ink); font-size: 15px; margin-bottom: 4px; }
+
+  @media (max-width: 960px) {
+    .ent-layout { grid-template-columns: minmax(0, 1fr); }
+    .ent-main { padding: 16px; }
+    .ent-bar-inner { padding: 0 16px; }
+    .ent-user-name { display: none; }
+  }
+  @media (max-width: 600px) {
+    .ro-cell { min-height: 56px; padding: 4px; }
+    .ro-badge { font-size: 10px; padding: 1px 4px; }
+    .ro-dow { padding: 6px 2px; text-align: center; font-size: 11px; }
+    .ent-inline-select { min-width: 0; width: 100%; }
+  }
+</style>
+
+<div class="ent">
+  <header class="ent-bar">
+    <div class="ent-bar-inner">
+      <span class="ent-brand">Hybrid Attendance</span>
+      <div class="ent-user">
+        <span class="ent-avatar" aria-hidden="true">{{ user.username|slice:":1"|upper }}</span>
+        <span class="ent-user-name">{{ user.username }}</span>
+        <span class="ent-role">{% if user.is_staff %}Staff{% else %}Employee{% endif %}</span>
+        <form method="post" action="{% url 'logout' %}" style="margin:0;">
+          {% csrf_token %}
+          <button type="submit" class="ent-logout">Log out</button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  <main class="ent-main">
+    {% if user.is_staff %}
+      <h1 class="ent-title">Attendance overview</h1>
+      <p class="ent-subtitle">Review employee attendance and download reports. Calendars are read-only for staff.</p>
+
+      <div class="ent-layout">
+        <section class="ent-card" aria-labelledby="cal-heading">
+          <div class="ent-card-head">
+            <h2 id="cal-heading">Employee calendar</h2>
+            <form method="get" style="margin:0;">
+              <select name="view_user" class="ent-inline-select" aria-label="Select employee" onchange="this.form.submit()">
+                <option value="">Select an employee</option>
+                {% for u in staff_users %}
+                  <option value="{{ u.pk }}" {% if selected_user and u.pk == selected_user.pk %}selected{% endif %}>{{ u.username }}</option>
+                {% endfor %}
+              </select>
+              <noscript><button type="submit" class="ent-btn">Show</button></noscript>
+            </form>
+          </div>
+          <div class="ent-card-body">
+            {% if selected_user %}
+              <div class="ro-toolbar" style="margin-bottom:16px;">
+                <button type="button" class="ent-btn ro-nav" id="ro-prev" aria-label="Previous month">&lsaquo;</button>
+                <button type="button" class="ent-btn ro-nav" id="ro-next" aria-label="Next month">&rsaquo;</button>
+                <span class="ro-month" id="ro-month" aria-live="polite"></span>
+                <button type="button" class="ent-btn" id="ro-today" style="margin-left:auto;">Today</button>
+              </div>
+              <div id="ro-kpis" class="ro-kpis"></div>
+              <div id="ro-calendar" role="grid" aria-label="Attendance for {{ selected_user.username }}"></div>
+              <div id="ro-legend" class="ro-legend"></div>
+              <p class="ent-help">Viewing {{ selected_user.username }}. Staff cannot add, edit or delete entries.</p>
+            {% else %}
+              <div class="ent-empty">
+                <strong>No employee selected</strong>
+                Choose an employee above to view their attendance.
+              </div>
+            {% endif %}
+          </div>
+        </section>
+
+        <aside class="ent-card" aria-labelledby="rep-heading">
+          <div class="ent-card-head"><h2 id="rep-heading">Download reports</h2></div>
+          <div class="ent-card-body">
+            <form method="get" action="{% url 'download_report' %}">
+              <div class="ent-field">
+                <label for="rep-user">Employee</label>
+                <select id="rep-user" name="user_id">
+                  <option value="all" {% if not selected_user %}selected{% endif %}>All employees</option>
+                  {% for u in staff_users %}
+                    <option value="{{ u.pk }}" {% if selected_user and u.pk == selected_user.pk %}selected{% endif %}>{{ u.username }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="ent-field">
+                <label for="rep-month">Month</label>
+                <select id="rep-month" name="month">
+                  {% for num, name in months %}
+                    <option value="{{ num }}" {% if num == current_month %}selected{% endif %}>{{ name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="ent-field">
+                <label for="rep-year">Year</label>
+                <input id="rep-year" type="number" name="year" value="{{ current_year }}" min="1900" max="2100" required>
+              </div>
+              <div class="ent-btn-stack">
+                <button type="submit" name="scope" value="month" class="ent-btn primary block">Download month report</button>
+                <button type="submit" name="scope" value="year" class="ent-btn block">Download year report</button>
+              </div>
+              <p class="ent-help">Reports download as Excel (.xlsx). The year report includes a summary sheet.</p>
+            </form>
+          </div>
+        </aside>
+      </div>
+
+    {% else %}
+      <h1 class="ent-title">My attendance</h1>
+      <p class="ent-subtitle">Record your daily status. Your entries are private to your account.</p>
+      <div class="ent-layout single">
+        <section class="ent-card">
+          <div class="ent-card-body">
+            <div id="app-root"></div>
+          </div>
+        </section>
+      </div>
+    {% endif %}
+  </main>
+</div>
+
+{% if user.is_staff %}
+  {% if selected_user %}
+  <script>
+  (function () {
+    var records = JSON.parse(document.getElementById('records-data').textContent);
+    var labels = JSON.parse(document.getElementById('labels-data').textContent);
+    var keys = Object.keys(labels);
+    var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var year = {{ current_year }}, month = {{ current_month }} - 1;
+
+    var calEl = document.getElementById('ro-calendar');
+    var kpiEl = document.getElementById('ro-kpis');
+    var legendEl = document.getElementById('ro-legend');
+    var monthEl = document.getElementById('ro-month');
+
+    function stClass(k) { var i = keys.indexOf(k); return 'st-' + (i < 0 ? 6 : i % 7); }
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    function el(tag, cls, text) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+
+    function render() {
+      monthEl.textContent = months[month] + ' ' + year;
+      calEl.innerHTML = ''; kpiEl.innerHTML = ''; legendEl.innerHTML = '';
+
+      var grid = el('div', 'ro-grid');
+      dows.forEach(function (d) { grid.appendChild(el('div', 'ro-dow', d)); });
+
+      var first = new Date(year, month, 1).getDay();
+      var days = new Date(year, month + 1, 0).getDate();
+      for (var i = 0; i < first; i++) grid.appendChild(el('div', 'ro-cell empty'));
+
+      var now = new Date();
+      var counts = {}, recorded = 0;
+      for (var d = 1; d <= days; d++) {
+        var iso = year + '-' + pad(month + 1) + '-' + pad(d);
+        var dow = new Date(year, month, d).getDay();
+        var isToday = (d === now.getDate() && month === now.getMonth() && year === now.getFullYear());
+        var cls = 'ro-cell' + (dow === 0 || dow === 6 ? ' weekend' : '') + (isToday ? ' today' : '');
+        var cell = el('div', cls);
+        cell.setAttribute('role', 'gridcell');
+        cell.appendChild(el('span', 'ro-num', d));
+        var status = records[iso];
+        if (status) {
+          var text = labels[status] || status;
+          var badge = el('span', 'ro-badge ' + stClass(status), text);
+          badge.title = text;
+          cell.appendChild(badge);
+          cell.setAttribute('aria-label', months[month] + ' ' + d + ': ' + text);
+          counts[status] = (counts[status] || 0) + 1;
+          recorded++;
+        }
+        grid.appendChild(cell);  // no click handlers: read-only
+      }
+      calEl.appendChild(grid);
+
+      var total = el('div', 'ro-kpi');
+      total.appendChild(el('div', 'ro-kpi-value', recorded));
+      total.appendChild(el('div', 'ro-kpi-label', 'Days recorded'));
+      kpiEl.appendChild(total);
+      keys.forEach(function (k) {
+        if (!counts[k]) return;
+        var card = el('div', 'ro-kpi ' + stClass(k));
+        card.appendChild(el('div', 'ro-kpi-value', counts[k]));
+        card.appendChild(el('div', 'ro-kpi-label', labels[k]));
+        kpiEl.appendChild(card);
+      });
+
+      keys.forEach(function (k) {
+        var s = el('span', stClass(k));
+        s.appendChild(el('i'));
+        s.appendChild(document.createTextNode(labels[k]));
+        legendEl.appendChild(s);
+      });
+    }
+
+    document.getElementById('ro-prev').onclick = function () { month--; if (month < 0) { month = 11; year--; } render(); };
+    document.getElementById('ro-next').onclick = function () { month++; if (month > 11) { month = 0; year++; } render(); };
+    document.getElementById('ro-today').onclick = function () { var t = new Date(); year = t.getFullYear(); month = t.getMonth(); render(); };
+    render();
+  })();
+  </script>
+  {% endif %}
+{% else %}
+<script>
+  window.ATTENDANCE_CONFIG = {
+    // Already parsed into a JS object by json_script
+    initialRecords: JSON.parse(document.getElementById('records-data').textContent),
+    currentYear: {{ current_year }},
+    currentMonth: {{ current_month }} - 1, // 0-indexed for JS Date
+    csrfToken: "{{ csrf_token }}",
+    setStatusUrl: "{% url 'set_status' %}",
+    downloadUrl: "{% url 'download_report' %}"
+  };
+</script>
+<script src="{% static 'tracker/calendar.js' %}"></script>
+{% endif %}
+{% endblock %}
